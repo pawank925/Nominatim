@@ -109,6 +109,12 @@ local insert_row = {}
 local script_path = debug.getinfo(1, "S").source:match("@?(.*/)")
 local PRESETS = loadfile(script_path .. 'presets.lua')()
 
+-- Default category assignment: emit osm.<key>.<value> for every matched
+-- main tag. Users can replace or extend this with set_custom_categories() /
+-- add_custom_categories(); see the presets for alternative assignment
+-- functions (e.g. 'minimal').
+CUSTOM_CATEGORY_FUNCS[1] = PRESETS.CATEGORY.main_tags
+
 for table_name, table_definition in pairs(table_definitions) do
     table_definition.name = table_name
     table_definition.data_tablespace = os.getenv("NOMINATIM_TABLESPACE_PLACE_DATA")
@@ -307,16 +313,17 @@ local function get_category(k, v)
     return 'osm.' .. sanitize_label(k) .. '.' .. sanitize_label(v)
 end
 
-local function sanitize_category_path(path)
+local function validate_category_path(path)
     if path == nil or path == '' then return nil end
-    local result = {}
+    local count = 0
     for label in path:gmatch('[^%.]+') do
-        local s = sanitize_label(label)
-        if s == nil or s == '' then return nil end
-        table.insert(result, s)
+        if label == '' or label:match('[^A-Za-z0-9_-]') then
+            return nil
+        end
+        count = count + 1
     end
-    if #result == 0 then return nil end
-    return table.concat(result, '.')
+    if count == 0 or count > 4 then return nil end
+    return path
 end
 
 
@@ -767,8 +774,11 @@ function module.process_tags(o)
         }
     end
 
-    -- Collect categories from main keys into a single row.
+    -- Collect the main tags of the object. The winning main tag determines
+    -- class/type, all matched main tags become categories via the registered
+    -- category functions below.
     local categories = {}
+    local main_tags = {}
     local main_class, main_type = nil, nil
     local merged_extratags = nil
     local postcode_collect = false
@@ -784,7 +794,7 @@ function module.process_tags(o)
                     if type(result) == 'table' and result.categories ~= nil then
                         local cat = get_category(k, v)
                         if cat ~= nil then
-                            table.insert(categories, cat)
+                            table.insert(main_tags, {key = k, cat = cat})
                             if main_class == nil
                                or k < main_class
                                or (k == main_class and v < main_type) then
@@ -793,9 +803,9 @@ function module.process_tags(o)
                             end
                         end
                         for _, extra_cat in ipairs(result.categories) do
-                            local sanitized = sanitize_category_path(extra_cat)
-                            if sanitized ~= nil then
-                                table.insert(categories, sanitized)
+                            local valid = validate_category_path(extra_cat)
+                            if valid ~= nil then
+                                table.insert(categories, valid)
                             end
                         end
                     else
@@ -808,7 +818,7 @@ function module.process_tags(o)
                         -- Collect category
                         local cat = get_category(k, v)
                         if cat ~= nil then
-                            table.insert(categories, cat)
+                            table.insert(main_tags, {key = k, cat = cat})
 
                             -- TODO: alphabetical winner selection is a temporary heuristic.
                             -- Later we will choose by rankability (e.g. avoid boundary on non-area ways)
@@ -845,10 +855,10 @@ function module.process_tags(o)
     -- Handle tag-based fallback: always add category, set class/type only if sole producer
     if tag_fallback ~= nil then
         local fk, fv = tag_fallback[1], tag_fallback[2]
-        local was_empty = (#categories == 0)
+        local was_empty = (#main_tags == 0)
         local cat = get_category(fk, fv)
         if cat ~= nil then
-            table.insert(categories, cat)
+            table.insert(main_tags, {key = fk, cat = cat})
             if was_empty then
                 main_class = fk
                 main_type = fv
@@ -857,7 +867,7 @@ function module.process_tags(o)
     end
 
     -- Handle address/house fallback if no main tags produced categories
-    if #categories == 0 then
+    if #main_tags == 0 then
         if needs_address_fallback then
             if next(o.names) ~= nil and NAMES.house ~= nil then
                 local names = {}
@@ -869,7 +879,7 @@ function module.process_tags(o)
                 o.names = names
             end
 
-            table.insert(categories, 'osm.place.house')
+            table.insert(main_tags, {key = 'place', cat = 'osm.place.house'})
             main_class = 'place'
             main_type = 'house'
         elseif POSTCODE_FALLBACK and not postcode_collect
@@ -882,13 +892,19 @@ function module.process_tags(o)
         end
     end
 
-for _, cat_func in ipairs(CUSTOM_CATEGORY_FUNCS) do
+    -- Store the matched main tags for the category functions
+    o.main_categories = main_tags
+    o.main_key = main_class
+    o.main_type = main_type
+
+    -- Run the registered category functions to build the final category list
+    for _, cat_func in ipairs(CUSTOM_CATEGORY_FUNCS) do
         local extra_cats = cat_func(o)
         if extra_cats ~= nil then
             for _, cat in ipairs(extra_cats) do
-                local sanitized = sanitize_category_path(cat)
-                if sanitized ~= nil then
-                    table.insert(categories, sanitized)
+                local valid = validate_category_path(cat)
+                if valid ~= nil then
+                    table.insert(categories, valid)
                 end
             end
         end
@@ -1148,18 +1164,36 @@ function module.set_relation_types(data)
     end
 end
 
+-- Add additional category assignment functions to the list of active
+-- functions. Every function receives the Place object and returns a list of
+-- non-empty ltree category paths (at most 4 labels, label characters limited
+-- to [A-Za-z0-9_-]) or nil. Functions may be given directly, as a preset name
+-- from PRESETS.CATEGORY (e.g. 'minimal') or as a list mixing both.
 function module.add_custom_categories(funcs)
     if type(funcs) == 'function' then
         table.insert(CUSTOM_CATEGORY_FUNCS, funcs)
+    elseif type(funcs) == 'string' then
+        local preset = PRESETS.CATEGORY[funcs]
+        if preset == nil then
+            error('Unknown preset for categories: ' .. funcs)
+        end
+        table.insert(CUSTOM_CATEGORY_FUNCS, preset)
     elseif type(funcs) == 'table' then
         for _, f in ipairs(funcs) do
-            if type(f) == 'function' then
+            if type(f) == 'string' then
+                module.add_custom_categories(f)
+            elseif type(f) == 'function' then
                 table.insert(CUSTOM_CATEGORY_FUNCS, f)
             end
         end
     end
 end
 
+-- Replace all active category assignment functions with the given ones,
+-- including the default 'main_tags' function. This makes it possible to use
+-- completely different categories (e.g. set_custom_categories{'minimal'}).
+-- Note that some osm.* categories are required for address processing and
+-- should be kept by any replacement function; see the presets for defaults.
 function module.set_custom_categories(funcs)
     CUSTOM_CATEGORY_FUNCS = {}
     module.add_custom_categories(funcs)

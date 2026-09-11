@@ -388,4 +388,53 @@ module.ENTRANCE_TABLE = {}
 module.ENTRANCE_TABLE.default = {main_tags = {'entrance', 'routing:entrance'},
                                  extra_exclude = module.IGNORE_KEYS.metatags}
 
+-- Category assignment functions. Each function receives a Place object (with
+-- main_categories/main_key/main_type precomputed in process_tags) and returns
+-- a list of ltree category strings or nil. The active function determines
+-- which categories of an object end up in the placex.categories column.
+--
+-- Two functions are supplied by default:
+--   * 'main_tags' implements the current default behaviour of emitting a
+--     category for every main tag that the object matches.
+--   * 'minimal' is an alternative that keeps only the categories required for
+--     address processing. It can be selected to reduce the category footprint
+--     in the database.
+-- The active function is chosen with module.set_custom_categories() /
+-- add_custom_categories() in the import style. The default is 'main_tags'.
+
+module.CATEGORY = {}
+
+-- 'main_tags': the default. Emits an osm.<key>.<value> category for every
+-- main tag the object matched, mirroring the pre-category-configuration
+-- behaviour.
+module.CATEGORY.main_tags = function(place)
+    if place.main_categories == nil then return nil end
+    local cats = {}
+    for _, mc in ipairs(place.main_categories) do
+        table.insert(cats, mc.cat)
+    end
+    return cats
+end
+
+-- Keys whose categories are needed by SQL-side address processing, i.e.
+-- parent/hierarchy linking and rank computation. Dropping these entirely
+-- would break address computation even when the primary tag is kept.
+local ADDRESS_KEYS = {boundary = 1, place = 1, waterway = 1,
+                      landuse = 1, leisure = 1, natural = 1, highway = 1}
+
+-- 'minimal': only keeps the category of the primary tag together with the
+-- categories that SQL address processing relies on. All other <osm>.<key>
+-- categories of the object are dropped. Some osm.* categories can never be
+-- omitted entirely because address processing depends on them.
+module.CATEGORY.minimal = function(place)
+    if place.main_categories == nil then return nil end
+    local cats = {}
+    for _, mc in ipairs(place.main_categories) do
+        if mc.key == place.main_key or ADDRESS_KEYS[mc.key] ~= nil then
+            table.insert(cats, mc.cat)
+        end
+    end
+    return cats
+end
+
 return module
