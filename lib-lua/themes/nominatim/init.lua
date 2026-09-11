@@ -109,6 +109,8 @@ local insert_row = {}
 local script_path = debug.getinfo(1, "S").source:match("@?(.*/)")
 local PRESETS = loadfile(script_path .. 'presets.lua')()
 
+CUSTOM_CATEGORY_FUNCS[1] = PRESETS.CATEGORY.main_tags
+
 for table_name, table_definition in pairs(table_definitions) do
     table_definition.name = table_name
     table_definition.data_tablespace = os.getenv("NOMINATIM_TABLESPACE_PLACE_DATA")
@@ -286,37 +288,27 @@ end
 local Place = {}
 Place.__index = Place
 
--- ltree labels: validate-or-fallback matching Photon's CATEGORY_PATTERN.
--- Hyphens replaced with underscore for PG < 16 ltree compat.
--- Any other invalid char -> fall back to 'yes'.
--- https://www.postgresql.org/message-id/E1pDtub-002Nio-Tv%40gemulon.postgresql.org
-local function sanitize_label(s)
-    if s == nil or s == '' then return 'yes' end
-    if s:match('[^A-Za-z0-9_-]') then
-        return 'yes'
-    end
-    return s:gsub('-', '_')
-end
-
--- Build an ltree-compatible category string: osm.<key>.<value>.
--- Returns nil if the key cannot be sanitized to a valid ltree label.
 local function get_category(k, v)
-    if k == nil or k == '' or k:match('[^A-Za-z0-9_-]') then
+    if k == nil or v == nil or k == '' or v == '' then
         return nil
     end
-    return 'osm.' .. sanitize_label(k) .. '.' .. sanitize_label(v)
+    if k:match('[^A-Za-z0-9_]') or v:match('[^A-Za-z0-9_]') then
+        return nil
+    end
+    return 'osm.' .. k .. '.' .. v
 end
 
-local function sanitize_category_path(path)
+local function validate_category_path(path)
     if path == nil or path == '' then return nil end
-    local result = {}
+    local count = 0
     for label in path:gmatch('[^%.]+') do
-        local s = sanitize_label(label)
-        if s == nil or s == '' then return nil end
-        table.insert(result, s)
+        if label == '' or label:match('[^A-Za-z0-9_]') then
+            return nil
+        end
+        count = count + 1
     end
-    if #result == 0 then return nil end
-    return table.concat(result, '.')
+    if count == 0 or count > 4 then return nil end
+    return path
 end
 
 
@@ -731,6 +723,196 @@ local function build_extratags(place, k, v)
     return extra
 end
 
+local function finalize_main_tags(main_tags, main_class, main_type)
+    local valid_tags = {}
+    local tie_v = nil
+    for _, mt in ipairs(main_tags) do
+        local cat = get_category(mt.key, mt.value)
+        if cat ~= nil then
+            table.insert(valid_tags, {key = mt.key, value = mt.value, cat = cat})
+            if mt.key == main_class
+               and (tie_v == nil or mt.value < tie_v) then
+                tie_v = mt.value
+            end
+        end
+    end
+
+    if main_class ~= nil and tie_v ~= nil then
+        return valid_tags, main_class, tie_v
+    end
+
+    main_class, main_type = nil, nil
+    for _, mt in ipairs(valid_tags) do
+        if main_class == nil
+           or mt.key < main_class
+           or (mt.key == main_class and mt.value < main_type) then
+            main_class = mt.key
+            main_type = mt.value
+        end
+    end
+
+    return valid_tags, main_class, main_type
+end
+
+local function compute_categories(o, categories, extra_categories)
+    for _, cat in ipairs(extra_categories) do
+        local valid = validate_category_path(cat)
+        if valid ~= nil then
+            table.insert(categories, valid)
+        end
+    end
+
+    for _, cat_func in ipairs(CUSTOM_CATEGORY_FUNCS) do
+        local extra_cats = cat_func(o)
+        if extra_cats ~= nil then
+            for _, cat in ipairs(extra_cats) do
+                local valid = validate_category_path(cat)
+                if valid ~= nil then
+                    table.insert(categories, valid)
+                end
+            end
+        end
+    end
+
+    return categories
+end
+
+local function is_rankable_place(o, categories)
+    for _, cat in ipairs(categories) do
+        local cat_class = cat:match('^osm%.([^%.]+)')
+        if cat_class == nil then
+            return true
+        end
+        if cat_class == 'highway' and o.is_area and next(o.names) == nil
+           and o.object.tags.area == 'yes' then
+        elseif cat_class == 'boundary'
+               and (not o.is_area or (o.admin_level <= 4
+                   and o.object.type:sub(1, 1):upper() == 'W')) then
+        else
+            return true
+        end
+    end
+    return false
+end
+
+local function compute_place_categories(o, needs_address_fallback)
+    local categories = {}
+    local main_tags = {}
+    local main_class, main_type = nil, nil
+    local postcode_collect = false
+    local tag_fallback = nil
+    local extra_categories = {}
+
+    for k, v in pairs(o.intags) do
+        local ktable = MAIN_KEYS[k]
+        if ktable then
+            local ktype = ktable[v] or ktable[1]
+            if type(ktype) == 'function' then
+                local result = ktype(o, k, v)
+                if result then
+                    if type(result) == 'table' and result.categories ~= nil then
+                        if k ~= nil and v ~= nil then
+                            table.insert(main_tags, {key = k, value = v})
+                        end
+                        for _, extra_cat in ipairs(result.categories) do
+                            table.insert(extra_categories, extra_cat)
+                        end
+                    else
+                        -- If transform returned a clone (lock_transform, etc.),
+                        -- use its names for the final row
+                        if result ~= o then
+                            o.names = result.names
+                        end
+
+                        -- Collect category
+                        table.insert(main_tags, {key = k, value = v})
+
+                        -- TODO: alphabetical winner selection is a temporary heuristic.
+                        -- Later we will choose by rankability (e.g. avoid boundary on non-area ways)
+                        -- or by explicit user/config priority or idk.
+                        if main_class == nil
+                           or k < main_class
+                           or (k == main_class and v < main_type) then
+                            main_class = k
+                            main_type = v
+                        end
+                    end
+                end
+            elseif ktype == 'postcode_area' then
+                postcode_collect = true
+                if o.object.type == 'relation'
+                        and o.address.postcode ~= nil
+                        and o:geometry_is_valid() then
+                    insert_row.place_postcode{
+                        postcode = o.address.postcode,
+                        centroid = o.geometry:centroid(),
+                        geometry = o.geometry
+                    }
+                end
+            elseif ktype == 'fallback' and o.has_name then
+                tag_fallback = {k, v}
+            end
+        end
+    end
+
+    -- Handle tag-based fallback: always add category, set class/type only if sole producer
+    if tag_fallback ~= nil then
+        local fk, fv = tag_fallback[1], tag_fallback[2]
+        local was_empty = (#main_tags == 0)
+        table.insert(main_tags, {key = fk, value = fv})
+        if was_empty then
+            main_class = fk
+            main_type = fv
+        end
+    end
+
+    main_tags, main_class, main_type = finalize_main_tags(main_tags, main_class, main_type)
+
+    -- Handle address/house fallback if no main tags produced categories
+    if #main_tags == 0 then
+        if needs_address_fallback then
+            if next(o.names) ~= nil and NAMES.house ~= nil then
+                local names = {}
+                for k, v in pairs(o.names) do
+                    if NAME_FILTER(k, v) == 'house' then
+                        names[k] = v
+                    end
+                end
+                o.names = names
+            end
+
+            table.insert(main_tags, {key = 'place', value = 'house'})
+            main_class = 'place'
+            main_type = 'house'
+            main_tags, main_class, main_type = finalize_main_tags(main_tags, main_class, main_type)
+        elseif POSTCODE_FALLBACK and not postcode_collect
+                and o.address.postcode ~= nil
+                and o:geometry_is_valid() then
+            insert_row.place_postcode{
+                postcode = o.address.postcode,
+                centroid = o.geometry:centroid()
+            }
+        end
+    end
+
+    local is_area = false
+    if o:geometry_is_valid() then
+        local gt = o.geometry:geometry_type()
+        is_area = (gt == 'POLYGON' or gt == 'MULTIPOLYGON')
+    end
+
+    o.main_categories = main_tags
+    o.main_key = main_class
+    o.main_type = main_type
+    o.is_area = is_area
+
+    compute_categories(o, categories, extra_categories)
+
+    if is_rankable_place(o, categories) then
+        return categories
+    end
+end
+
 function module.process_tags(o)
     if next(o.intags) == nil then
         return  -- shortcut when pre-filtering has removed all tags
@@ -767,138 +949,19 @@ function module.process_tags(o)
         }
     end
 
-    -- Collect categories from main keys into a single row.
-    local categories = {}
-    local main_class, main_type = nil, nil
-    local merged_extratags = nil
-    local postcode_collect = false
-    local tag_fallback = nil
-
-    for k, v in pairs(o.intags) do
-        local ktable = MAIN_KEYS[k]
-        if ktable then
-            local ktype = ktable[v] or ktable[1]
-            if type(ktype) == 'function' then
-                local result = ktype(o, k, v)
-                if result then
-                    if type(result) == 'table' and result.categories ~= nil then
-                        local cat = get_category(k, v)
-                        if cat ~= nil then
-                            table.insert(categories, cat)
-                            if main_class == nil
-                               or k < main_class
-                               or (k == main_class and v < main_type) then
-                                main_class = k
-                                main_type = v
-                            end
-                        end
-                        for _, extra_cat in ipairs(result.categories) do
-                            local sanitized = sanitize_category_path(extra_cat)
-                            if sanitized ~= nil then
-                                table.insert(categories, sanitized)
-                            end
-                        end
-                    else
-                        -- If transform returned a clone (lock_transform, etc.),
-                        -- use its names for the final row
-                        if result ~= o then
-                            o.names = result.names
-                        end
-
-                        -- Collect category
-                        local cat = get_category(k, v)
-                        if cat ~= nil then
-                            table.insert(categories, cat)
-
-                            -- TODO: alphabetical winner selection is a temporary heuristic.
-                            -- Later we will choose by rankability (e.g. avoid boundary on non-area ways)
-                            -- or by explicit user/config priority or idk.
-                            if main_class == nil
-                               or k < main_class
-                               or (k == main_class and v < main_type) then
-                                main_class = k
-                                main_type = v
-                            end
-                        end
-                    end
-                end
-            elseif ktype == 'postcode_area' then
-                postcode_collect = true
-                if o.object.type == 'relation'
-                        and o.address.postcode ~= nil
-                        and o:geometry_is_valid() then
-                    insert_row.place_postcode{
-                        postcode = o.address.postcode,
-                        centroid = o.geometry:centroid(),
-                        geometry = o.geometry
-                    }
-                end
-            elseif ktype == 'fallback' and o.has_name then
-                tag_fallback = {k, v}
-            end
-        end
+    local categories = compute_place_categories(o, needs_address_fallback)
+    if categories == nil then
+        return
     end
 
     -- Build extratags once after the loop (filters out main keys automatically)
-    merged_extratags = build_extratags(o, nil, nil)
-
-    -- Handle tag-based fallback: always add category, set class/type only if sole producer
-    if tag_fallback ~= nil then
-        local fk, fv = tag_fallback[1], tag_fallback[2]
-        local was_empty = (#categories == 0)
-        local cat = get_category(fk, fv)
-        if cat ~= nil then
-            table.insert(categories, cat)
-            if was_empty then
-                main_class = fk
-                main_type = fv
-            end
-        end
-    end
-
-    -- Handle address/house fallback if no main tags produced categories
-    if #categories == 0 then
-        if needs_address_fallback then
-            if next(o.names) ~= nil and NAMES.house ~= nil then
-                local names = {}
-                for k, v in pairs(o.names) do
-                    if NAME_FILTER(k, v) == 'house' then
-                        names[k] = v
-                    end
-                end
-                o.names = names
-            end
-
-            table.insert(categories, 'osm.place.house')
-            main_class = 'place'
-            main_type = 'house'
-        elseif POSTCODE_FALLBACK and not postcode_collect
-                and o.address.postcode ~= nil
-                and o:geometry_is_valid() then
-            insert_row.place_postcode{
-                postcode = o.address.postcode,
-                centroid = o.geometry:centroid()
-            }
-        end
-    end
-
-for _, cat_func in ipairs(CUSTOM_CATEGORY_FUNCS) do
-        local extra_cats = cat_func(o)
-        if extra_cats ~= nil then
-            for _, cat in ipairs(extra_cats) do
-                local sanitized = sanitize_category_path(cat)
-                if sanitized ~= nil then
-                    table.insert(categories, sanitized)
-                end
-            end
-        end
-    end
+    local merged_extratags = build_extratags(o, nil, nil)
 
     -- Build and insert single row with all collected categories
     if #categories > 0 and o:geometry_is_valid() then
         insert_row.place{
-            class = main_class,
-            type = main_type,
+            class = o.main_key,
+            type = o.main_type,
             admin_level = o.admin_level,
             name = next(o.names) and o.names,
             address = next(o.address) and o.address,
@@ -1151,9 +1214,17 @@ end
 function module.add_custom_categories(funcs)
     if type(funcs) == 'function' then
         table.insert(CUSTOM_CATEGORY_FUNCS, funcs)
+    elseif type(funcs) == 'string' then
+        local preset = PRESETS.CATEGORY[funcs]
+        if preset == nil then
+            error('Unknown preset for categories: ' .. funcs)
+        end
+        table.insert(CUSTOM_CATEGORY_FUNCS, preset)
     elseif type(funcs) == 'table' then
         for _, f in ipairs(funcs) do
-            if type(f) == 'function' then
+            if type(f) == 'string' then
+                module.add_custom_categories(f)
+            elseif type(f) == 'function' then
                 table.insert(CUSTOM_CATEGORY_FUNCS, f)
             end
         end

@@ -15,15 +15,18 @@ Feature: Import with custom styles by osm2pgsql
         When loading osm data
             """
             n10 Tboundary=administrative x0 y0
-            n11 Tboundary=administrative,name=Foo x0 y0
             n12 Tboundary=electoral x0 y0
             n13 Thighway=primary x0 y0
             n14 Thighway=street_lamp x0 y0
             n15 Thighway=primary,landuse=street x0 y0
+            n16 x1 y1
+            n17 x2 y1
+            n18 x2 y2
+            w11 Tboundary=administrative,name=Foo Nn16,n17,n18,n16
             """
         Then place contains exactly
             | object | class    | type           |
-            | N11    | boundary | administrative |
+            | W11    | boundary | administrative |
             | N13    | highway  | primary        |
             | N15    | highway  | primary        |
 
@@ -330,12 +333,15 @@ Feature: Import with custom styles by osm2pgsql
             """
         When loading osm data
             """
-            n1 Tboundary=administrative,admin_level=4,name=Foo x0 y0
             n2 Thighway=residential x0 y0
+            n6 x0 y0
+            n7 x1 y0
+            n8 x1 y1
+            w1 Tboundary=administrative,admin_level=8,name=Foo Nn6,n7,n8,n6
             """
         Then place contains exactly
             | object | class    | type           | categories!set                                           |
-            | N1     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.4' |
+            | W1     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.8' |
             | N2     | highway  | residential    | 'osm.highway.residential'                                |
 
     Scenario: Multiple custom category functions via add_custom_categories
@@ -368,7 +374,7 @@ Feature: Import with custom styles by osm2pgsql
             | N2     | tourism  | museum         | 'osm.tourism.museum', 'my.tourism.museum'                               |
             | N3     | highway  | residential    | 'osm.highway.residential'                                               |
 
-    Scenario: set_custom_categories replaces previous functions
+    Scenario: set_custom_categories replaces all category functions including the default
         Given the lua style file
             """
             local flex = require('import-full')
@@ -390,8 +396,30 @@ Feature: Import with custom styles by osm2pgsql
             n1 Ttourism=museum,name=Bar x0 y0
             """
         Then place contains exactly
-            | object | class   | type   | categories!set                           |
-            | N1     | tourism | museum | 'osm.tourism.museum', 'my.tourism.only' |
+            | object | class   | type   | categories!set     |
+            | N1     | tourism | museum | 'my.tourism.only'  |
+
+    Scenario: Minimal preset only keeps rankable categories
+        Given the lua style file
+            """
+            local flex = require('import-full')
+
+            flex.set_custom_categories('minimal')
+            """
+        When loading osm data
+            """
+            n10 Ttourism=museum,name=Eiffel x2 y2
+            n11 x0 y0
+            n12 x0 y1
+            n13 x1 y0
+            n14 Tboundary=administrative,admin_level=8,place=city,name=CityNode x3 y3
+            w1 Thighway=pedestrian,area=yes Nn11,n12,n13,n11
+            w2 Tboundary=administrative,admin_level=8,place=city,name=Metro Nn11,n12,n13,n11
+            """
+        Then place contains exactly
+            | object | class    | type           | categories!set                |
+            | N10    | tourism  | museum         | 'osm.tourism.museum'          |
+            | W2     | boundary | administrative | 'osm.boundary.administrative' |
 
     Scenario: Transform function returning custom categories table
         Given the lua style file
@@ -410,12 +438,15 @@ Feature: Import with custom styles by osm2pgsql
             """
         When loading osm data
             """
-            n1 Tboundary=administrative,admin_level=2,name=Country x0 y0
-            n2 Tboundary=administrative,admin_level=4,name=Region x0 y0
-            n3 Tboundary=administrative,name=Unknown x0 y0
+            n6 x0 y0
+            n7 x1 y0
+            n8 x1 y1
+            w1 Tboundary=administrative,admin_level=6,name=Region Nn6,n7,n8,n6
+            w2 Tboundary=administrative,admin_level=8,name=District Nn6,n7,n8,n6
+            w3 Tboundary=administrative,name=Unknown Nn6,n7,n8,n6
             """
         Then place contains exactly
             | object | class    | type           | categories!set                                                          |
-            | N1     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.2'          |
-            | N2     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.4'          |
-            | N3     | boundary | administrative | 'osm.boundary.administrative'                                           |
+            | W1     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.6'          |
+            | W2     | boundary | administrative | 'osm.boundary.administrative', 'osm.boundary.administrative.8'          |
+            | W3     | boundary | administrative | 'osm.boundary.administrative'                                           |

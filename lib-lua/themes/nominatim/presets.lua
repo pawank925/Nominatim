@@ -388,4 +388,51 @@ module.ENTRANCE_TABLE = {}
 module.ENTRANCE_TABLE.default = {main_tags = {'entrance', 'routing:entrance'},
                                  extra_exclude = module.IGNORE_KEYS.metatags}
 
+module.CATEGORY = {}
+
+module.CATEGORY.main_tags = function(place)
+    if place.main_categories == nil then return nil end
+    local cats = {}
+    for _, mc in ipairs(place.main_categories) do
+        table.insert(cats, mc.cat)
+    end
+    return cats
+end
+
+local function main_tag_category_relevant(place, cat, osm_type, is_area)
+    local cat_class = cat:match('^osm%.([^%.]+)')
+
+    if cat_class == 'highway' and is_area and next(place.names) == nil
+       and place.object.tags.area == 'yes' then
+        return false
+    end
+
+    if cat_class == 'boundary'
+       and (not is_area or (place.admin_level <= 4 and osm_type == 'W')) then
+        return false
+    end
+
+    if cat_class == 'place' then
+        for _, mc in ipairs(place.main_categories) do
+            if mc.cat == 'osm.boundary.administrative' then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+module.CATEGORY.minimal = function(place)
+    if place.main_categories == nil then return nil end
+    local osm_type = place.object.type and place.object.type:sub(1, 1):upper()
+    local cats = {}
+    for _, mc in ipairs(place.main_categories) do
+        if main_tag_category_relevant(place, mc.cat, osm_type, place.is_area) then
+            table.insert(cats, mc.cat)
+        end
+    end
+    return cats
+end
+
 return module
