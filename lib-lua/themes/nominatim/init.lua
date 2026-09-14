@@ -701,18 +701,12 @@ else
 end
 
 -- Build extratags for a merged row: filter via EXTRATAGS_FILTER,
--- remove sibling main tags (they belong in categories, not extratags),
--- then add any required extratags (wikipedia, wikidata, etc.).
-local function build_extratags(place, k, v)
+-- remove the winning main tag (it belongs in class/type, not extratags),
+-- keeping any secondary main tags, then add any required extratags.
+local function build_extratags(place, k, v, main_class)
     local extra = EXTRATAGS_FILTER(place, k, v) or {}
-    for ek, ev in pairs(extra) do
-        local ktable = MAIN_KEYS[ek]
-        if ktable ~= nil then
-            local transform = ktable[ev] or ktable[1]
-            if type(transform) == 'function' then
-                extra[ek] = nil
-            end
-        end
+    if main_class ~= nil then
+        extra[main_class] = nil
     end
     for tk, tv in pairs(place.object.tags) do
         if REQUIRED_EXTRATAGS_FILTER(tk, tv) and extra[tk] == nil then
@@ -855,6 +849,7 @@ local function compute_place_categories(o, needs_address_fallback)
         end
     end
 
+    merged_extratags = build_extratags(o, nil, nil, main_class)
     -- Handle tag-based fallback: always add category, set class/type only if sole producer
     if tag_fallback ~= nil then
         local fk, fv = tag_fallback[1], tag_fallback[2]

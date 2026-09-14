@@ -409,6 +409,7 @@ DECLARE
 
   addr_item RECORD;
   addr_place RECORD;
+  parent_place RECORD;
   parent_address_place_ids BIGINT[];
 BEGIN
   nameaddress_vector := '{}'::INTEGER[];
@@ -417,6 +418,24 @@ BEGIN
     INTO parent_name_vector, parent_address_vector
     FROM search_name s
     WHERE s.place_id = parent_place_id;
+
+  IF parent_address_vector is null
+     AND (token_get_name_search_tokens(token_info) is not null
+          OR token_get_housenumber_search_tokens(token_info) is not null)
+  THEN
+    parent_name_vector := '{}'::INTEGER[];
+    parent_address_vector := '{}'::INTEGER[];
+
+    FOR parent_place IN
+      SELECT s.name_vector
+        FROM place_addressline pa
+        JOIN search_name s ON s.place_id = pa.address_place_id
+       WHERE pa.place_id = parent_place_id
+    LOOP
+      parent_address_vector := array_merge(parent_address_vector,
+                                           parent_place.name_vector);
+    END LOOP;
+  END IF;
 
   FOR addr_item IN
     SELECT ranks.*, key,
@@ -689,7 +708,10 @@ BEGIN
     SELECT * INTO NEW.rank_search, NEW.rank_address
       FROM compute_place_rank(NEW.country_code,
                               CASE WHEN is_area THEN 'A' ELSE NEW.osm_type END,
-                              NEW.categories, NEW.admin_level,
+                              drop_unwanted_categories(NEW.categories, NEW.osm_type,
+                                                       NEW.admin_level, NEW.name,
+                                                       NEW.extratags, is_area),
+                              NEW.admin_level,
                               (NEW.extratags->'capital') = 'yes',
                               NEW.address->'postcode');
     -- a country code make no sense below rank 4 (country)
@@ -722,6 +744,7 @@ CREATE OR REPLACE FUNCTION placex_update()
   AS $$
 DECLARE
   i INTEGER;
+  is_area BOOLEAN;
   location RECORD;
 {% if db.middle_db_format == '1' %}
   relation_members TEXT[];
@@ -840,21 +863,22 @@ BEGIN
   END IF;
   {% if debug %}RAISE WARNING 'Country updated: "%"', NEW.country_code;{% endif %}
 
-
+  is_area := ST_GeometryType(NEW.geometry) IN ('ST_Polygon','ST_MultiPolygon');
   -- recompute the ranks, they might change when linking changes
   SELECT * INTO NEW.rank_search, NEW.rank_address
     FROM compute_place_rank(NEW.country_code,
-                            CASE WHEN ST_GeometryType(NEW.geometry)
-                                        IN ('ST_Polygon','ST_MultiPolygon')
-                            THEN 'A' ELSE NEW.osm_type END,
-                            NEW.categories, NEW.admin_level,
+                            CASE WHEN is_area THEN 'A' ELSE NEW.osm_type END,
+                            drop_unwanted_categories(NEW.categories, NEW.osm_type,
+                                                     NEW.admin_level, NEW.name,
+                                                     NEW.extratags, is_area),
+                            NEW.admin_level,
                             (NEW.extratags->'capital') = 'yes',
                             NEW.address->'postcode');
   -- Short-cut out for linked places. Note that this must happen after the
   -- address rank has been recomputed. The linking might nullify a shift in
   -- address rank.
   IF NEW.linked_place_id is not null THEN
-    NEW.token_info := null;
+    NEW.token_info := token_strip_info(NEW.token_info);
     {% if debug %}RAISE WARNING 'place already linked to %', OLD.linked_place_id;{% endif %}
     RETURN NEW;
   END IF;
