@@ -849,7 +849,6 @@ local function compute_place_categories(o, needs_address_fallback)
         end
     end
 
-    merged_extratags = build_extratags(o, nil, nil, main_class)
     -- Handle tag-based fallback: always add category, set class/type only if sole producer
     if tag_fallback ~= nil then
         local fk, fv = tag_fallback[1], tag_fallback[2]
@@ -949,8 +948,8 @@ function module.process_tags(o)
         return
     end
 
-    -- Build extratags once after the loop (filters out main keys automatically)
-    local merged_extratags = build_extratags(o, nil, nil)
+    -- Build extratags once after the loop (filters out the winning main key)
+    local merged_extratags = build_extratags(o, nil, nil, o.main_key)
 
     -- Build and insert single row with all collected categories
     if #categories > 0 and o:geometry_is_valid() then
