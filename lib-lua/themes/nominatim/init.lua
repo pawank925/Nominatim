@@ -771,24 +771,6 @@ local function compute_categories(o, categories, extra_categories)
     return categories
 end
 
-local function is_rankable_place(o, categories)
-    for _, cat in ipairs(categories) do
-        local cat_class = cat:match('^osm%.([^%.]+)')
-        if cat_class == nil then
-            return true
-        end
-        if cat_class == 'highway' and o.is_area and next(o.names) == nil
-           and o.object.tags.area == 'yes' then
-        elseif cat_class == 'boundary'
-               and (not o.is_area or (o.admin_level <= 4
-                   and o.object.type:sub(1, 1):upper() == 'W')) then
-        else
-            return true
-        end
-    end
-    return false
-end
-
 local function compute_place_categories(o, needs_address_fallback)
     local categories = {}
     local main_tags = {}
@@ -893,18 +875,16 @@ local function compute_place_categories(o, needs_address_fallback)
     if o:geometry_is_valid() then
         local gt = o.geometry:geometry_type()
         is_area = (gt == 'POLYGON' or gt == 'MULTIPOLYGON')
+        o.is_area = is_area
     end
 
     o.main_categories = main_tags
     o.main_key = main_class
     o.main_type = main_type
-    o.is_area = is_area
 
     compute_categories(o, categories, extra_categories)
 
-    if is_rankable_place(o, categories) then
-        return categories
-    end
+    return categories
 end
 
 function module.process_tags(o)

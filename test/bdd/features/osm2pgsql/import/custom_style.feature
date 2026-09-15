@@ -15,18 +15,15 @@ Feature: Import with custom styles by osm2pgsql
         When loading osm data
             """
             n10 Tboundary=administrative x0 y0
+            n11 Tboundary=administrative,name=Foo x0 y0
             n12 Tboundary=electoral x0 y0
             n13 Thighway=primary x0 y0
             n14 Thighway=street_lamp x0 y0
             n15 Thighway=primary,landuse=street x0 y0
-            n16 x1 y1
-            n17 x2 y1
-            n18 x2 y2
-            w11 Tboundary=administrative,name=Foo Nn16,n17,n18,n16
             """
         Then place contains exactly
             | object | class    | type           |
-            | W11    | boundary | administrative |
+            | N11    | boundary | administrative |
             | N13    | highway  | primary        |
             | N15    | highway  | primary        |
 
