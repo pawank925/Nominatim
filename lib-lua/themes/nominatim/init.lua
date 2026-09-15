@@ -712,9 +712,6 @@ local function build_extratags(place, k, v, main_class)
     return extra
 end
 
--- Check if a place is rankable at all. Mirror the checks from the
--- SQL side so that places that should not be ranked are dropped at the
--- osm2pgsql level instead.
 local function is_rankable_place(o, categories)
     for _, cat in ipairs(categories) do
         local cat_class = cat:match('^osm%.([^%.]+)')
