@@ -64,10 +64,10 @@ Feature: Import into placex
           | R40 | place | country | (1 1, 2 2, 1 2, 1 1) |
           | R41 | place | state   | (3 3, 4 4, 3 4, 3 3) |
         When importing
-        Then placex has no entry for N1
-        And placex has no entry for W10
-        And placex contains
+        Then placex contains
           | object | rank_search | rank_address |
+          | N1     | 25          | 0 |
+          | W10    | 25          | 0 |
           | R20    | 4           | 4 |
           | R21    | 25          | 0 |
           | R22    | 25          | 0 |
@@ -152,7 +152,7 @@ Feature: Import into placex
           | R6     | 4           | 0 |
           | W3     | 22          | 0 |
 
-    Scenario: boundary ways for countries and states are ignored
+Scenario: boundary ways for countries and states rank by admin level
         Given the 0.3 grid
           | 1 | 2 |
           | 4 | 3 |
@@ -166,11 +166,14 @@ Feature: Import into placex
           | R6  | boundary | administrative | 4     | (1,2,3,4,1) |
           | W7  | boundary | administrative | 5     | (1,2,3,4,1) |
           | R7  | boundary | administrative | 5     | (1,2,3,4,1) |
-       When importing
-       Then placex contains exactly
-           | object |
-           | R4     |
-           | R5     |
-           | R6     |
-           | W7     |
-           | R7     |
+        When importing
+        Then placex contains exactly
+            | object |
+            | W4     |
+            | R4     |
+            | W5     |
+            | R5     |
+            | W6     |
+            | R6     |
+            | W7     |
+            | R7     |
