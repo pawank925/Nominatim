@@ -152,7 +152,7 @@ Feature: Import into placex
           | R6     | 4           | 0 |
           | W3     | 22          | 0 |
 
-Scenario: boundary ways for countries and states rank by admin level
+    Scenario: boundary ways for countries and states rank by admin level
         Given the 0.3 grid
           | 1 | 2 |
           | 4 | 3 |
