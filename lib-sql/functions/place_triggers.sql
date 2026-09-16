@@ -101,21 +101,16 @@ BEGIN
     END LOOP;
   ELSE
     -- Modify an existing placex.
-    IF is_rankable_place(NEW.osm_type, NEW.categories, NEW.admin_level,
-                         NEW.name, NEW.extratags, is_area)
-    THEN
-      -- Recompute the ranks to look out for changes.
-      -- We use the old country assignment here which is good enough for the
-      -- purpose.
-      SELECT * INTO search_rank, address_rank
-        FROM compute_place_rank(existingplacex.country_code,
-                                CASE WHEN is_area THEN 'A' ELSE NEW.osm_type END,
-                                drop_unwanted_categories(NEW.categories, NEW.osm_type,
-                                                         NEW.admin_level, NEW.name,
-                                                         NEW.extratags, is_area),
-                                NEW.admin_level,
-                                (NEW.extratags->'capital') = 'yes',
-                                NEW.address->'postcode');
+    -- Recompute the ranks to look out for changes.
+    -- We use the old country assignment here which is good enough for the
+    -- purpose.
+    SELECT * INTO search_rank, address_rank
+      FROM compute_place_rank(existingplacex.country_code,
+                              CASE WHEN is_area THEN 'A' ELSE NEW.osm_type END,
+                              NEW.categories,
+                              NEW.admin_level,
+                              (NEW.extratags->'capital') = 'yes',
+                              NEW.address->'postcode');
 
       existing_is_area := ST_GeometryType(existingplacex.geometry) in ('ST_Polygon', 'ST_MultiPolygon');
 
@@ -189,10 +184,6 @@ BEGIN
                             ELSE NEW.geometry END,
             categories = NEW.categories
         WHERE place_id = existingplacex.place_id;
-    ELSE
-      -- New place is not really valid, remove the placex entry
-      UPDATE placex SET indexed_status = 100 WHERE place_id = existingplacex.place_id;
-    END IF;
 
     -- When an existing way is updated, recalculate entrances
     IF existingplacex.osm_type = 'W' and (existingplacex.rank_search > 27 or existingplacex.categories <@ 'osm.landuse' or existingplacex.categories <@ 'osm.leisure') THEN

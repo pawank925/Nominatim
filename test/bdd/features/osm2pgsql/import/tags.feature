@@ -146,7 +146,7 @@ Feature: Tag evaluation
             | N7101  | 'osm.tourism.hotel', 'osm.amenity.restaurant'    |
             | N7102  | 'osm.amenity.vending_machine'                    |
             | N7103  | 'osm.amenity.yes'                                |
-            | N7104  | 'osm.boundary.administrative', 'osm.place.city'  |
+            | N7104  | 'osm.place.city'                                |
 
 
     Scenario: Global fallback and skipping
@@ -191,12 +191,12 @@ Feature: Tag evaluation
             n10003 Tboundary=administrative,place=island,name=C
             """
         Then place contains
-            | object | class    | type           | categories!set                                    |
-            | N10001 | boundary | administrative | 'osm.boundary.administrative', 'osm.place.city'   |
+            | object | class | type   | categories!set     |
+            | N10001 | place | city   | 'osm.place.city'   |
         And place contains
-            | object | class    | type           | categories!set                                    |
-            | N10002 | boundary | natural        | 'osm.boundary.natural', 'osm.place.city'          |
-            | N10003 | boundary | administrative | 'osm.boundary.administrative', 'osm.place.island' |
+            | object | class | type   | categories!set              |
+            | N10002 | place | city   | 'osm.place.city'            |
+            | N10003 | place | island | 'osm.place.island'         |
 
 
     Scenario: Building fallbacks

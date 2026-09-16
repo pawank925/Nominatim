@@ -51,9 +51,9 @@ Feature: Import of simple objects by osm2pgsql
             n2 Tplace=hamlet,wikidata=Q1234321,name=Bar
             """
         Then place contains exactly
-           | object | class    | extratags!dict         | categories!set                                  |
-           | N1     | boundary | 'wikipedia:de': 'Foo'  | 'osm.boundary.administrative', 'osm.place.city' |
-           | N2     | place    | 'wikidata': 'Q1234321' | 'osm.place.hamlet'                              |
+           | object | class | extratags!dict         | categories!set     |
+           | N1     | place | 'wikipedia:de': 'Foo'  | 'osm.place.city'   |
+           | N2     | place | 'wikidata': 'Q1234321' | 'osm.place.hamlet' |
 
         Examples:
            | style   |
@@ -73,6 +73,6 @@ Feature: Import of simple objects by osm2pgsql
             n2 Tplace=hamlet,wikidata=Q1234321,name=Bar
             """
         Then place contains exactly
-           | object | class    | extratags!dict                            | categories!set                                  |
-           | N1     | boundary | 'place': 'city', 'wikipedia:de': 'Foo'   | 'osm.boundary.administrative', 'osm.place.city' |
-           | N2     | place    | 'wikidata': 'Q1234321'                   | 'osm.place.hamlet'                              |
+           | object | class | extratags!dict                                                     | categories!set     |
+           | N1     | place | 'boundary': 'administrative', 'wikipedia:de': 'Foo'                | 'osm.place.city'   |
+           | N2     | place | 'wikidata': 'Q1234321'                                           | 'osm.place.hamlet' |

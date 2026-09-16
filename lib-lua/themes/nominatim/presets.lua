@@ -80,12 +80,31 @@ local function lock_transform(place)
     return false
 end
 
+local function filter_highway(place)
+    if not place:geometry_is_valid() then return nil end
+    if place.is_area and not place.has_name and place.object.tags.area == 'yes' then
+        return nil
+    end
+    return place
+end
+
+local function filter_boundary(place, k, v)
+    if not place.has_name then return nil end
+    if not place:geometry_is_valid() then return nil end
+    if not place.is_area then return nil end
+    if v == 'administrative' and place.object.type == 'way'
+       and place.admin_level <= 4 then
+        return nil
+    end
+    return place
+end
+
 -- Main tag definition
 
 module.MAIN_TAGS = {}
 
 module.MAIN_TAGS.admin = {
-    boundary = {administrative = 'named'},
+    boundary = {administrative = filter_boundary},
     landuse = {residential = 'fallback',
                farm = 'fallback',
                farmyard = 'fallback',
@@ -114,7 +133,7 @@ module.MAIN_TAGS.admin = {
 }
 
 module.MAIN_TAGS.all_boundaries = {
-    boundary = {'named',
+    boundary = {filter_boundary,
                 place = 'delete',
                 land_area = 'delete',
                 protected_area = 'fallback',
@@ -176,7 +195,7 @@ module.MAIN_TAGS_POIS = function (group)
     healthcare = {'fallback',
                   yes = group,
                   no = group},
-    highway = {'always',
+    highway = {filter_highway,
                no = group,
                turning_circle = group,
                mini_roundabout = group,
@@ -245,16 +264,16 @@ module.MAIN_TAGS_STREETS = {}
 
 module.MAIN_TAGS_STREETS.default = {
     place = {square = 'always'},
-    highway = {motorway = 'always',
-               trunk = 'always',
-               primary = 'always',
-               secondary = 'always',
-               tertiary = 'always',
-               unclassified = 'always',
-               residential = 'always',
-               road = 'always',
-               living_street = 'always',
-               pedestrian = 'always',
+    highway = {motorway = filter_highway,
+               trunk = filter_highway,
+               primary = filter_highway,
+               secondary = filter_highway,
+               tertiary = filter_highway,
+               unclassified = filter_highway,
+               residential = filter_highway,
+               road = filter_highway,
+               living_street = filter_highway,
+               pedestrian = filter_highway,
                service = 'named',
                cycleway = 'named',
                path = 'named',
@@ -271,48 +290,48 @@ module.MAIN_TAGS_STREETS.default = {
 
 module.MAIN_TAGS_STREETS.car = {
     place = {square = 'always'},
-    highway = {motorway = 'always',
-               trunk = 'always',
-               primary = 'always',
-               secondary = 'always',
-               tertiary = 'always',
-               unclassified = 'always',
-               residential = 'always',
-               road = 'always',
-               living_street = 'always',
-               service = 'always',
-               track = 'always',
-               motorway_link = 'always',
-               trunk_link = 'always',
-               primary_link = 'always',
-               secondary_link = 'always',
-               tertiary_link = 'always'}
+    highway = {motorway = filter_highway,
+               trunk = filter_highway,
+               primary = filter_highway,
+               secondary = filter_highway,
+               tertiary = filter_highway,
+               unclassified = filter_highway,
+               residential = filter_highway,
+               road = filter_highway,
+               living_street = filter_highway,
+               service = filter_highway,
+               track = filter_highway,
+               motorway_link = filter_highway,
+               trunk_link = filter_highway,
+               primary_link = filter_highway,
+               secondary_link = filter_highway,
+               tertiary_link = filter_highway}
 }
 
 module.MAIN_TAGS_STREETS.all = {
     place = {square = 'always'},
-    highway = {motorway = 'always',
-               trunk = 'always',
-               primary = 'always',
-               secondary = 'always',
-               tertiary = 'always',
-               unclassified = 'always',
-               residential = 'always',
-               road = 'always',
-               living_street = 'always',
-               pedestrian = 'always',
-               service = 'always',
-               cycleway = 'always',
-               path = 'always',
-               footway = 'always',
-               steps = 'always',
-               bridleway = 'always',
-               track = 'always',
-               motorway_link = 'always',
-               trunk_link = 'always',
-               primary_link = 'always',
-               secondary_link = 'always',
-               tertiary_link = 'always'}
+    highway = {motorway = filter_highway,
+               trunk = filter_highway,
+               primary = filter_highway,
+               secondary = filter_highway,
+               tertiary = filter_highway,
+               unclassified = filter_highway,
+               residential = filter_highway,
+               road = filter_highway,
+               living_street = filter_highway,
+               pedestrian = filter_highway,
+               service = filter_highway,
+               cycleway = filter_highway,
+               path = filter_highway,
+               footway = filter_highway,
+               steps = filter_highway,
+               bridleway = filter_highway,
+               track = filter_highway,
+               motorway_link = filter_highway,
+               trunk_link = filter_highway,
+               primary_link = filter_highway,
+               secondary_link = filter_highway,
+               tertiary_link = filter_highway}
 }
 
 

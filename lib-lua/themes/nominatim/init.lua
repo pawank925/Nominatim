@@ -457,11 +457,16 @@ function Place:geometry_is_valid()
             self.geometry = false
             return false
         end
-
-        return true
+    elseif self.geometry == false then
+        return false
     end
 
-    return self.geometry ~= false
+    if self.is_area == nil then
+        local gt = self.geometry:geometry_type()
+        self.is_area = (gt == 'POLYGON' or gt == 'MULTIPOLYGON')
+    end
+
+    return true
 end
 
 
@@ -712,24 +717,6 @@ local function build_extratags(place, k, v, main_class)
     return extra
 end
 
-local function is_rankable_place(o, categories)
-    for _, cat in ipairs(categories) do
-        local cat_class = cat:match('^osm%.([^%.]+)')
-        if cat_class == nil then
-            return true
-        end
-        if cat_class == 'highway' and o.is_area and next(o.names) == nil
-           and o.object.tags.area == 'yes' then
-        elseif cat_class == 'boundary'
-               and (not o.is_area or (o.admin_level <= 4
-                   and o.object.type:sub(1, 1):upper() == 'W')) then
-        else
-            return true
-        end
-    end
-    return false
-end
-
 function module.process_tags(o)
     if next(o.intags) == nil then
         return  -- shortcut when pre-filtering has removed all tags
@@ -863,15 +850,6 @@ function module.process_tags(o)
 
     -- Build and insert single row with all collected categories
     if #categories > 0 and o:geometry_is_valid() then
-        -- Drop places that are not rankable (e.g. boundary nodes), mirroring
-        -- the checks previously done in the SQL code.
-        local gt = o.geometry:geometry_type()
-        o.is_area = (gt == 'POLYGON' or gt == 'MULTIPOLYGON')
-
-        if not is_rankable_place(o, categories) then
-            return
-        end
-
         insert_row.place{
             class = main_class,
             type = main_type,
