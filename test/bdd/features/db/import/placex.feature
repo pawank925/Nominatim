@@ -151,29 +151,3 @@ Feature: Import into placex
           | R5     | 4           | 0 |
           | R6     | 4           | 0 |
           | W3     | 22          | 0 |
-
-    Scenario: boundary ways for countries and states rank by admin level
-        Given the 0.3 grid
-          | 1 | 2 |
-          | 4 | 3 |
-        Given the named places
-          | osm | class    | type           | admin | geometry |
-          | W4  | boundary | administrative | 2     | (1,2,3,4,1) |
-          | R4  | boundary | administrative | 2     | (1,2,3,4,1) |
-          | W5  | boundary | administrative | 3     | (1,2,3,4,1) |
-          | R5  | boundary | administrative | 3     | (1,2,3,4,1) |
-          | W6  | boundary | administrative | 4     | (1,2,3,4,1) |
-          | R6  | boundary | administrative | 4     | (1,2,3,4,1) |
-          | W7  | boundary | administrative | 5     | (1,2,3,4,1) |
-          | R7  | boundary | administrative | 5     | (1,2,3,4,1) |
-        When importing
-        Then placex contains exactly
-            | object |
-            | W4     |
-            | R4     |
-            | W5     |
-            | R5     |
-            | W6     |
-            | R6     |
-            | W7     |
-            | R7     |

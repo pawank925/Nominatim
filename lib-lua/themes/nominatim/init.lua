@@ -457,13 +457,11 @@ function Place:geometry_is_valid()
             self.geometry = false
             return false
         end
-    elseif self.geometry == false then
-        return false
-    end
 
-    if self.is_area == nil then
         local gt = self.geometry:geometry_type()
         self.is_area = (gt == 'POLYGON' or gt == 'MULTIPOLYGON')
+    elseif self.geometry == false then
+        return false
     end
 
     return true

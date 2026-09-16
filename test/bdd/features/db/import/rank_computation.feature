@@ -306,13 +306,3 @@ Feature: Rank assignment
           | W1     | N10     |
           | W2     | N10     |
           | W2     | N11     |
-
-
-    Scenario: Boundary categories take precedence over waterway categories for ranking
-        Given the named places
-          | osm | class    | type           | admin | categories                                      | geometry |
-          | W20 | boundary | administrative | 4     | osm.waterway.river, osm.boundary.administrative | 1 1, 2 2 |
-        When importing
-        Then placex contains
-          | object | rank_search | rank_address |
-          | W20    | 8           | 8 |

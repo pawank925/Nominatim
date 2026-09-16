@@ -81,17 +81,17 @@ local function lock_transform(place)
 end
 
 local function filter_highway(place)
-    if not place:geometry_is_valid() then return nil end
-    if place.is_area and not place.has_name and place.object.tags.area == 'yes' then
+    if not place.has_name and place.object.tags.area == 'yes'
+       and place:geometry_is_valid() and place.is_area then
         return nil
     end
     return place
 end
 
 local function filter_boundary(place, k, v)
-    if not place.has_name then return nil end
-    if not place:geometry_is_valid() then return nil end
-    if not place.is_area then return nil end
+    if not place.has_name or not place:geometry_is_valid() or not place.is_area then
+        return nil
+    end
     if v == 'administrative' and place.object.type == 'way'
        and place.admin_level <= 4 then
         return nil

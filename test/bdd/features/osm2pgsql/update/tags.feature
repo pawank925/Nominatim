@@ -480,6 +480,30 @@ Feature: Tag evaluation
           | R10    | boundary | informal | 4           | osm.boundary.informal   |
 
 
+    Scenario: Boundary loses its category when changing from polygon to way
+        Given the grid
+          | 10 | 11 |
+          | 13 | 12 |
+        When loading osm data
+          """
+          n10
+          n11
+          n12
+          n13
+          w10 Tboundary=administrative,name=Border,admin_level=5 Nn10,n11,n12,n13,n10
+          """
+        Then place contains exactly
+          | object | class    | type           | admin_level | categories                    |
+          | W10    | boundary | administrative | 5           | osm.boundary.administrative   |
+
+        When updating osm data
+          """
+          w10 Tboundary=administrative,name=Border,admin_level=5 Nn10,n11,n12,n13
+          """
+        Then place contains exactly
+          | object |
+
+
     Scenario: Main tag and geometry is changed
         When loading osm data
           """

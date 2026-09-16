@@ -45,15 +45,22 @@ Feature: Import of simple objects by osm2pgsql
             """
             local flex = require('import-<style>')
             """
+        Given the grid
+            | 10 | 11 |
+            | 13 | 12 |
         When loading osm data
             """
-            n1 Tboundary=administrative,place=city,name=Foo,wikipedia:de=Foo
             n2 Tplace=hamlet,wikidata=Q1234321,name=Bar
+            n10
+            n11
+            n12
+            n13
+            w10 Tboundary=administrative,place=city,name=Foo,wikipedia:de=Foo Nn10,n11,n12,n13,n10
             """
         Then place contains exactly
-           | object | class | extratags!dict         | categories!set     |
-           | N1     | place | 'wikipedia:de': 'Foo'  | 'osm.place.city'   |
-           | N2     | place | 'wikidata': 'Q1234321' | 'osm.place.hamlet' |
+           | object | class    | extratags!dict         | categories!set                                   |
+           | W10    | boundary | 'wikipedia:de': 'Foo'  | 'osm.boundary.administrative', 'osm.place.city' |
+           | N2     | place    | 'wikidata': 'Q1234321' | 'osm.place.hamlet'                               |
 
         Examples:
            | style   |
@@ -67,12 +74,19 @@ Feature: Import of simple objects by osm2pgsql
             """
             local flex = require('import-extratags')
             """
+        Given the grid
+            | 10 | 11 |
+            | 13 | 12 |
         When loading osm data
             """
-            n1 Tboundary=administrative,place=city,name=Foo,wikipedia:de=Foo
             n2 Tplace=hamlet,wikidata=Q1234321,name=Bar
+            n10
+            n11
+            n12
+            n13
+            w10 Tboundary=administrative,place=city,name=Foo,wikipedia:de=Foo Nn10,n11,n12,n13,n10
             """
         Then place contains exactly
-           | object | class | extratags!dict                                                     | categories!set     |
-           | N1     | place | 'boundary': 'administrative', 'wikipedia:de': 'Foo'                | 'osm.place.city'   |
-           | N2     | place | 'wikidata': 'Q1234321'                                           | 'osm.place.hamlet' |
+           | object | class    | extratags!dict                              | categories!set                                                        |
+           | W10    | boundary | 'place': 'city', 'wikipedia:de': 'Foo'     | 'osm.boundary.administrative', 'osm.place.city'                      |
+           | N2     | place    | 'wikidata': 'Q1234321'                      | 'osm.place.hamlet'                                                    |
